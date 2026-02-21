@@ -34,7 +34,7 @@ kubectl create namespace argocd
 kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 # Deploy addons via GitOps
-kubectl apply -f addons/manifests/
+kubectl apply -f ansible/manifests/
 ```
 
 ### 3. Verify
@@ -53,7 +53,7 @@ k3slab/
 │   ├── 02-healthchecks.md
 │   ├── 03-remote-access.md
 │   └── 05-architecture.md
-├── addons/         # Kubernetes addons by category
+├── ansible/         # Kubernetes addons by category
 │   ├── observability/    (Prometheus, Grafana, Loki, ArgoCD, etc.)
 │   ├── security/        (RBAC, Network Policies, Cert-Manager)
 │   ├── networking/      (Traefik, MetalLB, Cilium, etc.)
@@ -62,10 +62,10 @@ k3slab/
 │   ├── automation/      (GitLab, Harbor, n8n, Portainer)
 │   ├── database/        (PostgreSQL, Redis, MongoDB)
 │   └── servicemesh/    (Istio)
-├── addons/         # Ansible playbooks for deployment
+├── ansible/         # Ansible playbooks for deployment
 │   ├── install-k3s.yaml      # Install k3s cluster
 │   ├── addons.yaml          # Deploy all addons
-│   ├── addons/              # Individual addon playbooks
+│   ├── ansible/              # Individual addon playbooks
 │   └── manifests/           # ArgoCD Application manifests
 ├── manifests/      # Sample Kubernetes manifests
 │   ├── nginx-deployment.yaml
@@ -98,16 +98,16 @@ ansible-playbook -i inventory.ini addons.yaml
 
 ```bash
 # ArgoCD (GitOps)
-ansible-playbook -i inventory.ini addons/argocd.yaml
+ansible-playbook -i inventory.ini ansible/argocd.yaml
 
 # Longhorn (Storage)
-ansible-playbook -i inventory.ini addons/longhorn.yaml
+ansible-playbook -i inventory.ini ansible/longhorn.yaml
 
 # MetalLB (Load Balancer)
-ansible-playbook -i inventory.ini addons/metallb.yaml
+ansible-playbook -i inventory.ini ansible/metallb.yaml
 
 # Prometheus + Grafana
-ansible-playbook -i inventory.ini addons/prometheus.yaml
+ansible-playbook -i inventory.ini ansible/prometheus.yaml
 ```
 
 ## GitOps with ArgoCD
@@ -116,7 +116,7 @@ All addons can be deployed via ArgoCD for automatic sync from Git:
 
 ```bash
 # After installing ArgoCD
-kubectl apply -f addons/manifests/
+kubectl apply -f ansible/manifests/
 
 # Check sync status
 argocd app list
@@ -165,8 +165,8 @@ Follow our 65-day journey from zero to hero! See the LinkedIn content sheet for 
 ## Learning Resources
 
 - [Setup Guides](./setup/)
-- [Addon Documentation](./addons/)
-- [Ansible Playbooks](./addons/)
+- [Addon Documentation](./ansible/)
+- [Ansible Playbooks](./ansible/)
 - [Sample Manifests](./manifests/)
 
 ## License
