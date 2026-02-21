@@ -1,5 +1,5 @@
 ---
-# Deploy Addons via ArgoCD
+# Deploy All Addons via Ansible
 - name: Deploy Addons
   hosts: k3s-master
   become: yes
@@ -7,92 +7,59 @@
     k3s_context: default
     argocd_namespace: argocd
   tasks:
-    - name: Ensure ArgoCD is installed
-      shell: |
-        k3s kubectl create namespace {{ argocd_namespace }} || true
-        k3s kubectl apply -n {{ argocd_namespace }} -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-      register: argocd_install
-      changed_when: "'created' in argocd_install.stdout or 'configured' in argocd_install.stdout"
-      failed_when: false
+    - name: Deploy ArgoCD
+      import_playbook: addons/argocd.yaml
 
-    - name: Wait for ArgoCD to be ready
-      shell: |
-        sleep 30
-        k3s kubectl get pods -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server
-      register: argocd_pods
-      until: "'Running' in argocd_pods.stdout"
-      retries: 10
-      delay: 10
-      changed_when: false
-
-    - name: Get ArgoCD admin password
-      shell: |
-        k3s kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-      register: argocd_password
-      changed_when: false
-
-    - name: Store ArgoCD password
-      set_fact:
-        argocd_admin_password: "{{ argocd_password.stdout }}"
-      when: argocd_password.rc == 0
-
-    - name: Create ArgoCD Applications namespace
-      shell: k3s kubectl create namespace apps || true
-      changed_when: false
-
-    # Longhorn
     - name: Deploy Longhorn
-      shell: |
-        k3s kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.6.0/deploy/longhorn.yaml
-      register: longhorn_deploy
-      changed_when: "'created' in longhorn_deploy.stdout"
-      failed_when: false
+      import_playbook: addons/longhorn.yaml
 
-    # MetalLB
     - name: Deploy MetalLB
-      shell: |
-        k3s kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
-      register: metallb_deploy
-      changed_when: "'created' in metallb_deploy.stdout"
-      failed_when: false
+      import_playbook: addons/metallb.yaml
 
-    # Cert Manager
-    - name: Deploy Cert Manager
-      shell: |
-        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
-      register: certmanager_deploy
-      changed_when: "'created' in certmanager_deploy.stdout"
-      failed_when: false
+    - name: Deploy Cert-Manager
+      import_playbook: addons/cert-manager.yaml
 
-    # Prometheus & Grafana
-    - name: Deploy Prometheus Stack
-      shell: |
-        k3s kubectl create namespace monitoring || true
-        k3s kubectl apply -n monitoring -f https://raw.githubusercontent.com/prometheus-community/helm-charts/main/charts/kube-prometheus-stack/crds/crd-prometheuses.yaml
-        k3s helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-        k3s helm repo update
-        k3s helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring --set grafana.persistence.enabled=true --set prometheus.prometheusSpec.retention=15d
-      register: prometheus_deploy
-      changed_when: "'created' in prometheus_deploy.stdout or 'installed' in prometheus_deploy.stdout"
-      failed_when: false
+    - name: Deploy Prometheus & Grafana
+      import_playbook: addons/prometheus.yaml
 
-    # KEDA
+    - name: Deploy Loki
+      import_playbook: addons/loki.yaml
+
     - name: Deploy KEDA
-      shell: |
-        k3s kubectl apply -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
-      register: keda_deploy
-      changed_when: "'created' in keda_deploy.stdout"
-      failed_when: false
+      import_playbook: addons/keda.yaml
 
-    # Ingress (Traefik is built-in with k3s)
+    - name: Deploy n8n
+      import_playbook: addons/n8n.yaml
 
-    - name: Show deployment summary
+    - name: Deploy Portainer
+      import_playbook: addons/portainer.yaml
+
+    - name: Deploy Gitea
+      import_playbook: addons/gitea.yaml
+
+    - name: Deploy Harbor
+      import_playbook: addons/harbor.yaml
+
+    - name: Show summary
       debug:
         msg: |
-          Addons deployed!
+          ========================================
+          All Addons Deployed Successfully!
+          ========================================
           
-          ArgoCD UI: kubectl port-forward -n {{ argocd_namespace }} svc/argocd-server 8080:80
-          ArgoCD Password: {{ argocd_admin_password }}
+          Access URLs:
+          -----------
+          ArgoCD:       kubectl port-forward -n argocd svc/argocd-server 8080:80
+          Grafana:      kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
+          Prometheus:   kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-stack 9090:9090
+          Loki:        kubectl port-forward -n loki svc/loki 3100:3100
+          Portainer:   kubectl port-forward -n portainer svc/portainer 9000:9000
+          n8n:         kubectl port-forward -n n8n svc/n8n 5678:80
+          Gitea:       kubectl port-forward -n gitea svc/gitea-http 3000:3000
+          Harbor:      kubectl port-forward -n harbor svc/harbor 8080:80
           
-          To check status:
-            k3s kubectl get pods -A
+          Storage:     Longhorn (default)
+          LB:          MetalLB (192.168.1.100-200)
+          
+          Check status:
+            kubectl get pods -A

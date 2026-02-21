@@ -1,0 +1,47 @@
+---
+# Deploy n8n Workflow Automation
+- name: Install n8n
+  hosts: k3s-master
+  become: yes
+  tasks:
+    - name: Create n8n namespace
+      shell: k3s kubectl create namespace n8n || true
+      changed_when: false
+
+    - name: Add n8n helm repo
+      shell: |
+        k3s helm repo add n8n https://n8n-io.github.io/n8n-helm-chart
+        k3s helm repo update
+      changed_when: false
+
+    - name: Deploy n8n
+      shell: |
+        k3s helm install n8n n8n/n8n -n n8n \
+          --set persistence.enabled=true \
+          --set persistence.size=5Gi \
+          --set service.type=ClusterIP
+      register: n8n_deploy
+      changed_when: "'installed' in n8n_deploy.stdout"
+
+    - name: Wait for n8n to be ready
+      shell: |
+        sleep 30
+        k3s kubectl get pods -n n8n -o jsonpath='{.items[0].status.phase}'
+      register: n8n_status
+      until: n8n_status.stdout == 'Running'
+      retries: 10
+      delay: 10
+      changed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          n8n installed!
+          
+          Access:
+            kubectl port-forward -n n8n svc/n8n 5678:80
+            
+          First-time setup:
+            1. Open http://localhost:5678
+            2. Create admin user
+            3. Start automating!

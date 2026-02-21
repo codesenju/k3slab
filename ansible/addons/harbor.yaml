@@ -1,0 +1,50 @@
+---
+# Deploy Harbor Registry
+- name: Install Harbor
+  hosts: k3s-master
+  become: yes
+  tasks:
+    - name: Create harbor namespace
+      shell: k3s kubectl create namespace harbor || true
+      changed_when: false
+
+    - name: Add Harbor helm repo
+      shell: |
+        k3s helm repo add harbor https://helm.goharbor.io
+        k3s helm repo update
+      changed_when: false
+
+    - name: Deploy Harbor
+      shell: |
+        k3s helm install harbor harbor/harbor -n harbor \
+          --set expose.ingress.enabled=true \
+          --set expose.ingress.className=nginx \
+          --set persistence.enabled=true \
+          --set persistence.persistentVolumeClaim.size=50Gi \
+          --set harborAdminPassword=Harbor12345
+      register: harbor_deploy
+      changed_when: "'installed' in harbor_deploy.stdout"
+
+    - name: Wait for Harbor to be ready
+      shell: |
+        sleep 60
+        k3s kubectl get pods -n harbor -o jsonpath='{.items[*].status.phase}'
+      register: harbor_status
+      until: "'Running' in harbor_status.stdout"
+      retries: 15
+      delay: 15
+      changed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          Harbor installed!
+          
+          Access:
+            kubectl port-forward -n harbor svc/harbor 8080:80
+            
+          Credentials:
+            Username: admin
+            Password: Harbor12345
+          
+          Note: Update password after first login!

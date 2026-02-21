@@ -1,0 +1,38 @@
+---
+# Deploy Portainer
+- name: Install Portainer
+  hosts: k3s-master
+  become: yes
+  tasks:
+    - name: Create portainer namespace
+      shell: k3s kubectl create namespace portainer || true
+      changed_when: false
+
+    - name: Deploy Portainer
+      shell: |
+        k3s kubectl apply -f https://raw.githubusercontent.com/portainer/portainer-k8s/master/deploy/manifests/portainer.yaml
+      register: portainer_deploy
+      changed_when: "'created' in portainer_deploy.stdout"
+
+    - name: Wait for Portainer to be ready
+      shell: |
+        sleep 30
+        k3s kubectl get pods -n portainer -o jsonpath='{.items[*].status.phase}'
+      register: portainer_status
+      until: "'Running' in portainer_status.stdout"
+      retries: 10
+      delay: 10
+      changed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          Portainer installed!
+          
+          Access:
+            kubectl port-forward -n portainer svc/portainer 9000:9000
+            
+          First-time setup:
+            1. Open http://localhost:9000
+            2. Create admin user
+            3. Connect to your k3s cluster

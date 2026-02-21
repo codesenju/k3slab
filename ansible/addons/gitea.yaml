@@ -1,0 +1,49 @@
+---
+# Deploy Gitea Git Service
+- name: Install Gitea
+  hosts: k3s-master
+  become: yes
+  tasks:
+    - name: Create gitea namespace
+      shell: k3s kubectl create namespace gitea || true
+      changed_when: false
+
+    - name: Add Gitea helm repo
+      shell: |
+        k3s helm repo add gitea https://dl.gitea.io/charts
+        k3s helm repo update
+      changed_when: false
+
+    - name: Deploy Gitea
+      shell: |
+        k3s helm install gitea gitea/gitea -n gitea \
+          --set persistence.enabled=true \
+          --set persistence.size=10Gi \
+          --set service.http.type=ClusterIP \
+          --set service.ssh.type=ClusterIP
+      register: gitea_deploy
+      changed_when: "'installed' in gitea_deploy.stdout"
+
+    - name: Wait for Gitea to be ready
+      shell: |
+        sleep 45
+        k3s kubectl get pods -n gitea -o jsonpath='{.items[*].status.phase}'
+      register: gitea_status
+      until: "'Running' in gitea_status.stdout"
+      retries: 15
+      delay: 10
+      changed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          Gitea installed!
+          
+          Access:
+            kubectl port-forward -n gitea svc/gitea-http 3000:3000
+            kubectl port-forward -n gitea svc/gitea-ssh 2222:22
+            
+          First-time setup:
+            1. Open http://localhost:3000
+            2. Configure database (SQLite for small setups)
+            3. Create admin user
