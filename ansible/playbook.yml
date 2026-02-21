@@ -1,0 +1,139 @@
+# Ansible Playbook: k3s Installation
+
+This playbook automates k3s installation across multiple nodes.
+
+## Requirements
+
+- Ansible 2.9+
+- SSH access to target nodes
+
+## Directory Structure
+
+```
+ansible/
+├── inventory.ini
+├── playbook.yml
+├── roles/
+│   └── k3s/
+│       ├── tasks/
+│       │   └── main.yml
+│       ├── handlers/
+│       │   └── main.yml
+│       ├── templates/
+│       │   └── config.yaml.j2
+│       └── vars/
+│           └── main.yml
+└── README.md
+```
+
+## inventory.ini
+
+```ini
+[k3s-master]
+k3s-01 ansible_host=192.168.1.10 ansible_user=ubuntu
+
+[k3s-agent]
+k3s-02 ansible_host=192.168.1.11 ansible_user=ubuntu
+k3s-03 ansible_host=192.168.1.12 ansible_user=ubuntu
+
+[k3s:children]
+k3s-master
+k3s-agent
+```
+
+## playbook.yml
+
+```yaml
+---
+- name: Install k3s Cluster
+  hosts: k3s
+  become: yes
+  roles:
+    - k3s
+
+- name: Configure k3s (Master only)
+  hosts: k3s-master
+  become: yes
+  roles:
+    - k3s_config
+```
+
+## Role: k3s/tasks/main.yml
+
+```yaml
+---
+- name: Update system
+  apt:
+    update_cache: yes
+    upgrade: dist
+  when: ansible_os_family == "Debian"
+
+- name: Disable swap
+  shell: |
+    swapoff -a
+    sed -i '/swap/d' /etc/fstab
+  changed_when: false
+
+- name: Load required modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Add sysctl settings
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }
+    - { name: net.ipv4.ip_forward, value: 1 }
+
+- name: Download and install k3s
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0700'
+
+- name: Install k3s
+  shell: |
+    {% if inventory_hostname in groups['k3s-master'] %}
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644 --cluster-cidr=10.42.0.0/16 --service-cidr=10.43.0.0/16" sh -
+    {% else %}
+    curl -sfL https://get.k3s.io | K3S_URL=https://{{ groups['k3s-master'][0] }}:6443 K3S_TOKEN="{{ hostvars[groups['k3s-master'][0]]['k3s_token'] }}" sh -
+    {% endif
+  environment:
+    K3S_TOKEN: "{{ k3s_token }}"
+  when: inventory_hostname in groups['k3s-agent']
+
+- name: Install k3s on master
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -
+  when: inventory_hostname in groups['k3s-master']
+```
+
+## Run the Playbook
+
+```bash
+# Install k3s on all nodes
+ansible-playbook -i inventory.ini playbook.yml
+
+# Just install on master
+ansible-playbook -i inventory.ini playbook.yml --tags master
+
+# Just join agents
+ansible-playbook -i inventory.ini playbook.yml --tags agent
+```
+
+## Get k3s Token (for agents)
+
+On master node:
+```bash
+sudo cat /var/lib/rancher/k3s/server/agent-token
+```
+
+Or use `kubectl get secrets -n kube-system` to get the node-token.
