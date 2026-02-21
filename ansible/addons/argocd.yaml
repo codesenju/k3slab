@@ -1,0 +1,48 @@
+---
+# Deploy ArgoCD
+- name: Install ArgoCD
+  hosts: k3s-master
+  become: yes
+  vars:
+    argocd_version: stable
+  tasks:
+    - name: Create ArgoCD namespace
+      shell: k3s kubectl create namespace argocd || true
+      changed_when: false
+
+    - name: Deploy ArgoCD
+      shell: |
+        k3s kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/install.yaml
+      register: argocd_deploy
+      changed_when: "'installed' in argocd_deploy.stdout or 'created' in argocd_deploy.stdout"
+
+    - name: Wait for ArgoCD to be ready
+      shell: |
+        sleep 20
+        k3s kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].status.phase}'
+      register: argocd_status
+      until: argocd_status.stdout == 'Running'
+      retries: 15
+      delay: 10
+      changed_when: false
+
+    - name: Get ArgoCD initial password
+      shell: |
+        k3s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      register: argocd_password
+      changed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          ArgoCD installed!
+          
+          Access:
+            kubectl port-forward -n argocd svc/argocd-server 8080:80
+            
+          Username: admin
+          Password: {{ argocd_password.stdout }}
+          
+          Or use CLI:
+            brew install argocd
+            argocd login localhost:8080

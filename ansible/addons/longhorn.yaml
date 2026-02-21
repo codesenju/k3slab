@@ -1,0 +1,43 @@
+---
+# Deploy Longhorn
+- name: Install Longhorn
+  hosts: k3s-master
+  become: yes
+  vars:
+    longhorn_version: v1.6.0
+  tasks:
+    - name: Create Longhorn namespace
+      shell: k3s kubectl create namespace longhorn-system || true
+      changed_when: false
+
+    - name: Deploy Longhorn
+      shell: |
+        k3s kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/{{ longhorn_version }}/deploy/longhorn.yaml
+      register: longhorn_deploy
+      changed_when: "'created' in longhorn_deploy.stdout or 'installed' in longhorn_deploy.stdout"
+
+    - name: Wait for Longhorn to be ready
+      shell: |
+        sleep 30
+        k3s kubectl get pods -n longhorn-system -o jsonpath='{.items[*].status.phase}'
+      register: longhorn_status
+      until: "'Running' in longhorn_status.stdout"
+      retries: 15
+      delay: 10
+      changed_when: false
+
+    - name: Set default storage class
+      shell: |
+        k3s kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}'
+      changed_when: false
+      failed_when: false
+
+    - name: Display access info
+      debug:
+        msg: |
+          Longhorn installed!
+          
+          UI Access:
+            kubectl port-forward -n longhorn-system svc/longhorn-frontend 8080:80
+            
+          Default Storage Class: longhorn

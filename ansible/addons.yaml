@@ -1,0 +1,98 @@
+---
+# Deploy Addons via ArgoCD
+- name: Deploy Addons
+  hosts: k3s-master
+  become: yes
+  vars:
+    k3s_context: default
+    argocd_namespace: argocd
+  tasks:
+    - name: Ensure ArgoCD is installed
+      shell: |
+        k3s kubectl create namespace {{ argocd_namespace }} || true
+        k3s kubectl apply -n {{ argocd_namespace }} -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      register: argocd_install
+      changed_when: "'created' in argocd_install.stdout or 'configured' in argocd_install.stdout"
+      failed_when: false
+
+    - name: Wait for ArgoCD to be ready
+      shell: |
+        sleep 30
+        k3s kubectl get pods -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server
+      register: argocd_pods
+      until: "'Running' in argocd_pods.stdout"
+      retries: 10
+      delay: 10
+      changed_when: false
+
+    - name: Get ArgoCD admin password
+      shell: |
+        k3s kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      register: argocd_password
+      changed_when: false
+
+    - name: Store ArgoCD password
+      set_fact:
+        argocd_admin_password: "{{ argocd_password.stdout }}"
+      when: argocd_password.rc == 0
+
+    - name: Create ArgoCD Applications namespace
+      shell: k3s kubectl create namespace apps || true
+      changed_when: false
+
+    # Longhorn
+    - name: Deploy Longhorn
+      shell: |
+        k3s kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.6.0/deploy/longhorn.yaml
+      register: longhorn_deploy
+      changed_when: "'created' in longhorn_deploy.stdout"
+      failed_when: false
+
+    # MetalLB
+    - name: Deploy MetalLB
+      shell: |
+        k3s kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+      register: metallb_deploy
+      changed_when: "'created' in metallb_deploy.stdout"
+      failed_when: false
+
+    # Cert Manager
+    - name: Deploy Cert Manager
+      shell: |
+        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+      register: certmanager_deploy
+      changed_when: "'created' in certmanager_deploy.stdout"
+      failed_when: false
+
+    # Prometheus & Grafana
+    - name: Deploy Prometheus Stack
+      shell: |
+        k3s kubectl create namespace monitoring || true
+        k3s kubectl apply -n monitoring -f https://raw.githubusercontent.com/prometheus-community/helm-charts/main/charts/kube-prometheus-stack/crds/crd-prometheuses.yaml
+        k3s helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        k3s helm repo update
+        k3s helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring --set grafana.persistence.enabled=true --set prometheus.prometheusSpec.retention=15d
+      register: prometheus_deploy
+      changed_when: "'created' in prometheus_deploy.stdout or 'installed' in prometheus_deploy.stdout"
+      failed_when: false
+
+    # KEDA
+    - name: Deploy KEDA
+      shell: |
+        k3s kubectl apply -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
+      register: keda_deploy
+      changed_when: "'created' in keda_deploy.stdout"
+      failed_when: false
+
+    # Ingress (Traefik is built-in with k3s)
+
+    - name: Show deployment summary
+      debug:
+        msg: |
+          Addons deployed!
+          
+          ArgoCD UI: kubectl port-forward -n {{ argocd_namespace }} svc/argocd-server 8080:80
+          ArgoCD Password: {{ argocd_admin_password }}
+          
+          To check status:
+            k3s kubectl get pods -A

@@ -1,0 +1,62 @@
+---
+# Deploy MetalLB
+- name: Install MetalLB
+  hosts: k3s-master
+  become: yes
+  vars:
+    metallb_version: v0.14.5
+  tasks:
+    - name: Create MetalLB namespace
+      shell: k3s kubectl create namespace metallb-system || true
+      changed_when: false
+
+    - name: Deploy MetalLB
+      shell: |
+        k3s kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+      register: metallb_deploy
+      changed_when: "'created' in metallb_deploy.stdout or 'installed' in metallb_deploy.stdout"
+
+    - name: Wait for MetalLB to be ready
+      shell: |
+        sleep 20
+        k3s kubectl get pods -n metallb-system -o jsonpath='{.items[*].status.phase}'
+      register: metallb_status
+      until: "'Running' in metallb_status.stdout"
+      retries: 10
+      delay: 10
+      changed_when: false
+
+    - name: Create IP Address Pool
+      k8s:
+        state: present
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: default-pool
+            namespace: metallb-system
+          spec:
+            addresses:
+            - 192.168.1.100-192.168.1.200
+
+    - name: Create L2 Advertisement
+      k8s:
+        state: present
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: default
+            namespace: metallb-system
+          spec:
+            ipAddressPools:
+            - default-pool
+
+    - name: Display info
+      debug:
+        msg: |
+          MetalLB installed!
+          
+          IP Pool: 192.168.1.100-192.168.1.200
+          
+          Now you can use type: LoadBalancer for services!

@@ -1,0 +1,32 @@
+# Ansible Variables
+---
+# k3s Version
+k3s_version: v1.34.4+k3s1
+
+# Installation Flags
+k3s_install_flags:
+  - --write-kubeconfig-mode 644
+  - --cluster-cidr=10.42.0.0/16
+  - --service-cidr=10.43.0.0/16
+
+# Token (generate with: openssl rand -base64 32)
+k3s_token: ""
+
+# Network
+pod_cidr: 10.42.0.0/16
+service_cidr: 10.43.0.0/16
+
+# Addons
+argocd_version: stable
+longhorn_version: v1.6.0
+metallb_version: v0.14.5
+
+# MetalLB IP Pool
+metallb_ip_range: 192.168.1.100-192.168.1.200
+
+# Monitoring
+prometheus_retention: 15d
+grafana_persistence_size: 10Gi
+
+# Storage
+default_storage_class: longhorn
