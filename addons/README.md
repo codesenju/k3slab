@@ -2,7 +2,22 @@
 
 This directory contains guides and manifests for deploying various Kubernetes addons on k3s.
 
-## Categories
+## Quick Deploy via Ansible (Recommended)
+
+The fastest way to deploy addons is using our Ansible playbooks:
+
+```bash
+# Install k3s first
+ansible-playbook -i inventory.ini install-k3s.yaml
+
+# Deploy all addons via ArgoCD
+ansible-playbook -i inventory.ini addons.yaml
+
+# Or deploy specific addon
+ansible-playbook -i inventory.ini addons/argocd.yaml
+```
+
+## Manual Installation
 
 ### Observability
 - [Prometheus](./observability/prometheus.md) - Metrics collection
@@ -10,21 +25,34 @@ This directory contains guides and manifests for deploying various Kubernetes ad
 - [Loki](./observability/loki.md) - Log aggregation
 - [Promtail](./observability/promtail.md) - Log collection
 - [Alertmanager](./observability/alertmanager.md) - Alert routing
+- [Argocd](./observability/argocd.md) - GitOps deployment
+- [Headlamp](./observability/headlamp.md) - Kubernetes Dashboard
+- [Goldilocks](./observability/goldilocks.md) - Resource recommendations
+- [Alloy](./observability/alloy.md) - Grafana Alloy (formerly Agent)
+- [Mimir](./observability/mimir.md) - Metrics storage
+- [Tempo](./observability/tempo.md) - Distributed tracing
+- [OpenSearch](./observability/opensearch.md) - Search & analytics
+- [OpenTelemetry](./observability/opentelemetry.md) - Observability framework
 
 ### Security
-](./security/rbac- [RBAC.md) - Role-based access control
+- [RBAC](./security/rbac.md) - Role-based access control
 - [Network Policies](./security/network-policies.md) - Pod-to-pod security
-- [Secrets Management](./security/secrets.md) - Using Vault or Sealed Secrets
+- [Cert-Manager](./security/cert-manager.md) - TLS certificates
 
 ### Networking
 - [Traefik](./networking/traefik.md) - Built-in ingress (included with k3s)
+- [Ingress-Nginx](./networking/ingress-nginx.md) - Nginx ingress controller
 - [MetalLB](./networking/metallb.md) - Load balancer for bare metal
 - [Cilium](./networking/cilium.md) - eBPF networking and security
+- [Cloudflared](./networking/cloudflared.md) - Cloudflare Tunnel
+- [External DNS](./networking/external-dns.md) - Automatic DNS records
+- [Nginx Proxy Manager](./networking/nginx-proxy-manager.md) - Reverse proxy
 
 ### Storage
 - [Local Path Provisioner](./storage/local-path-provisioner.md) - Built-in with k3s
 - [Longhorn](./storage/longhorn.md) - Cloud-native block storage
 - [NFS Client](./storage/nfs-client.md) - NFS storage support
+- [MinIO](./storage/minio.md) - S3-compatible storage
 
 ### Auto-scaling
 - [Metrics Server](./autoscaling/metrics-server.md) - Built-in with k3s
@@ -36,19 +64,43 @@ This directory contains guides and manifests for deploying various Kubernetes ad
 - [Tekton](./cicd/tekton.md) - Kubernetes-native pipelines
 - [Jenkins](./cicd/jenkins.md) - Classic CI/CD
 
+### Automation
+- [GitLab](./automation/gitlab.md) - Self-hosted Git repository
+- [Gitea](./automation/gitea.md) - Lightweight Git service
+- [Harbor](./automation/harbor.md) - Container registry
+- [Portainer](./automation/portainer.md) - Container management
+- [n8n](./automation/n8n.md) - Workflow automation
+
 ### Databases
 - [PostgreSQL](./database/postgresql.md) - Using CloudNativePG
 - [Redis](./database/redis.md) - Caching and message queues
-- [MySQL](./database/mysql.md) - Using Operator
+- [MongoDB](./database/mongodb.md) - Using Operator
 
 ### Service Mesh
 - [Istio](./servicemesh/istio.md) - Complete service mesh
-- [Linkerd](./servicemesh/linkerd.md) - Lightweight service mesh
 
 ### Advanced
-- [Knative](./advanced/knative.md) - Serverless on k3s
-- [KubeVirt](./advanced/kubevirt.md) - Virtual machines in k3s
-- [Krustlet](./advanced/krustlet.md) - WebAssembly runtime
+- [Crossplane](./advanced/crossplane.md) - Infrastructure as Code
+- [Homarr](./advanced/homarr.md) - Dashboard
+- [Immich](./advanced/immich.md) - Photo management
+- [Ntfy](./advanced/ntfy.md) - Notifications
+
+### Identity
+- [Authentik](./identity/authentik.md) - Identity Provider
+
+## GitOps with ArgoCD (Recommended)
+
+All addons can be deployed via ArgoCD for GitOps-style management:
+
+```bash
+# Install ArgoCD
+ansible-playbook -i inventory.ini addons/argocd.yaml
+
+# Deploy addons
+kubectl apply -f ansible/manifests/argocd-longhorn.yaml
+kubectl apply -f ansible/manifests/argocd-prometheus.yaml
+kubectl apply -f ansible/manifests/argocd-metallb.yaml
+```
 
 ## Quick Install Examples
 
@@ -75,10 +127,11 @@ kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.6.0/depl
 ## Choosing Addons
 
 Start with:
-1. **Monitoring** - Prometheus + Grafana (day 1)
-2. **Logging** - Loki (after monitoring)
-3. **Ingress** - Traefik (already included!)
-4. **Storage** - Longhorn (when needed)
+1. **ArgoCD** - GitOps deployment (install first!)
+2. **Monitoring** - Prometheus + Grafana
+3. **Logging** - Loki (after monitoring)
+4. **Ingress** - Traefik (already included!)
+5. **Storage** - Longhorn (when needed)
 
 ## Verify Installations
 
