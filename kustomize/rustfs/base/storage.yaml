@@ -8,8 +8,8 @@ spec:
   capacity:
     storage: 5Gi
   nfs:
-    server: 192.168.0.16
-    path: /mnt/pool1/AppData/rustfs
+    server: localhost
+    path: /mnt/nfs/k8s/rustfs
   accessModes:
     - ReadWriteOnce
   mountOptions:
