@@ -5,170 +5,183 @@ Learn and explore Kubernetes addons using k3s - the lightweight Kubernetes.
 ## What is k3s?
 
 k3s is a fully compliant Kubernetes distribution that is:
-- Lightweight (< 512MB RAM)
-- Single binary installation
-- Perfect for learning, edge, and resource-constrained environments
+- **Lightweight** (< 512MB RAM)
+- **Single binary** installation
+- **Perfect for learning**, edge computing, and resource-constrained environments
+
+## Why Learn k3s?
+
+| Feature | k3s | Traditional k8s |
+|---------|-----|-----------------|
+| RAM Usage | ~512MB | ~2GB+ |
+| Binary Size | ~100MB | ~1GB+ |
+| Install Time | < 5 minutes | 30+ minutes |
+| Dependencies | Embedded | Multiple |
+
+## Course Structure
+
+This course is structured for **self-paced learning** over 65 days:
+
+### 🟢 Beginner (Days 1-20)
+- k3s installation and basics
+- kubectl fundamentals
+- Your first deployment
+- Core concepts (Pods, Services, Deployments)
+
+### 🟡 Medium (Days 21-45)
+- Storage (NFS, Longhorn)
+- Networking (Ingress, Load Balancers)
+- Monitoring (Prometheus, Grafana)
+- Security (RBAC, Network Policies)
+- Auto-scaling (HPA, KEDA)
+
+### 🔴 Advanced (Days 46-65)
+- Service Mesh (Istio)
+- GitOps (ArgoCD)
+- Complex applications
+- Production best practices
 
 ## Quick Start
 
-### 1. Install k3s
+### Step 1: Install k3s
 
 ```bash
-# Manual installation
+# One-line installation
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -
 
-# Or use Ansible (recommended)
-cd ansible
-ansible-playbook -i inventory.ini install-k3s.yaml
+# Verify installation
+sudo k3s kubectl get nodes
 ```
 
-### 2. Deploy Addons with ArgoCD
+### Step 2: Configure kubectl
 
 ```bash
-# Install ArgoCD and addons via Ansible
-cd ansible
-ansible-playbook -i inventory.ini addons.yaml
-
-# Or manually
-kubectl create namespace argocd
-kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
-# Deploy addons via GitOps
-kubectl apply -f ansible/manifests/
-```
-
-### 3. Verify
-
-```bash
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+export KUBECONFIG=~/.kube/config
 kubectl get nodes
-kubectl get pods -A
+```
+
+### Step 3: Deploy Your First App
+
+```bash
+kubectl create deployment nginx --image=nginx
+kubectl expose deployment nginx --port=80 --type=ClusterIP
+kubectl get pods
 ```
 
 ## Project Structure
 
 ```
 k3slab/
-├── setup/           # Getting started guides
+├── setup/              # Step-by-step setup guides
 │   ├── 01-installation.md
 │   ├── 02-healthchecks.md
 │   ├── 03-remote-access.md
-│   └── 05-architecture.md
-├── ansible/         # Kubernetes addons by category
-│   ├── observability/    (Prometheus, Grafana, Loki, ArgoCD, etc.)
-│   ├── security/        (RBAC, Network Policies, Cert-Manager)
-│   ├── networking/      (Traefik, MetalLB, Cilium, etc.)
-│   ├── storage/         (Longhorn, MinIO, NFS)
-│   ├── autoscaling/     (HPA, KEDA)
-│   ├── automation/      (GitLab, Harbor, n8n, Portainer)
-│   ├── database/        (PostgreSQL, Redis, MongoDB)
-│   └── servicemesh/    (Istio)
-├── ansible/         # Ansible playbooks for deployment
-│   ├── install-k3s.yaml      # Install k3s cluster
-│   ├── addons.yaml          # Deploy all addons
-│   ├── ansible/              # Individual addon playbooks
-│   └── manifests/           # ArgoCD Application manifests
-├── manifests/      # Sample Kubernetes manifests
-│   ├── nginx-deployment.yaml
-│   ├── postgres-deployment.yaml
-│   ├── nginx-hpa.yaml
-│   └── network-policies.yaml
-├── tutorials/      # Step-by-step tutorials
-├── projects/       # Real-world projects
-└── challenges/    # Hands-on challenges
+│   ├── 04-first-app.md
+│   ├── 05-architecture.md
+│   └── 06-nfs-server.md
+│
+├── ansible/            # Ansible playbooks for deployment
+│   ├── addons/        # Individual addon playbooks
+│   ├── addons.yaml    # Deploy all addons
+│   └── inventory.ini
+│
+├── kustomize/         # Kubernetes app configurations
+│   ├── n8n/
+│   ├── minio/
+│   └── ...
+│
+├── challenges/         # Hands-on exercises
+└── tutorials/         # In-depth tutorials
 ```
 
-## Deploy Addons via Ansible (Recommended)
+## Learning Path
 
-### Install k3s + Addons
+### Week 1-2: Foundations
+1. Install k3s ✓
+2. Verify cluster health
+3. Deploy first app
+4. Understand k3s architecture
+5. Learn kubectl basics
+
+### Week 3-4: Core Addons
+1. Set up NFS for storage
+2. Install ArgoCD
+3. Deploy monitoring (Prometheus + Grafana)
+4. Configure ingress (Traefik)
+
+### Week 5-8: Advanced Addons
+1. Longhorn for persistent storage
+2. MetalLB for load balancing
+3. Security (RBAC, Network Policies)
+4. Auto-scaling (HPA, KEDA)
+
+### Week 9-13: Production Ready
+1. Service Mesh (Istio)
+2. GitOps best practices
+3. Backup and disaster recovery
+4. Multi-cluster management
+
+## Deploy Addons
+
+### Using Ansible (Recommended)
 
 ```bash
 cd ansible
-
-# Edit inventory.ini with your hosts
-nano inventory.ini
-
-# Install k3s
-ansible-playbook -i inventory.ini install-k3s.yaml
-
-# Deploy ArgoCD + All Addons
 ansible-playbook -i inventory.ini addons.yaml
 ```
 
-### Deploy Individual Addons
+### Deploy Specific Addons
 
 ```bash
-# ArgoCD (GitOps)
-ansible-playbook -i inventory.ini ansible/argocd.yaml
+# Storage
+ansible-playbook -i inventory.ini addons/longhorn.yaml
 
-# Longhorn (Storage)
-ansible-playbook -i inventory.ini ansible/longhorn.yaml
+# Monitoring
+ansible-playbook -i inventory.ini addons/prometheus.yaml
 
-# MetalLB (Load Balancer)
-ansible-playbook -i inventory.ini ansible/metallb.yaml
-
-# Prometheus + Grafana
-ansible-playbook -i inventory.ini ansible/prometheus.yaml
+# Automation
+ansible-playbook -i inventory.ini addons/n8n.yaml
 ```
 
-## GitOps with ArgoCD
+## Available Addons
 
-All addons can be deployed via ArgoCD for automatic sync from Git:
-
-```bash
-# After installing ArgoCD
-kubectl apply -f ansible/manifests/
-
-# Check sync status
-argocd app list
-argocd app sync <app-name>
-```
-
-### Available ArgoCD Applications
-
-| Application | Description |
-|-------------|-------------|
-| `argocd-longhorn.yaml` | Longhorn storage |
-| `argocd-prometheus.yaml` | Prometheus + Grafana |
-| `argocd-metallb.yaml` | MetalLB load balancer |
-| `argocd-nginx.yaml` | Nginx ingress |
-
-## Categories
-
-- **Setup** - Installing and configuring k3s
-- **Observability** - Monitoring, logging, tracing
-- **Security** - RBAC, secrets, network policies
-- **Networking** - Ingress, service mesh, DNS
-- **Storage** - Persistent volumes, CSI drivers
-- **Auto-scaling** - HPA, VPA, KEDA
-- **CI/CD** - GitOps, ArgoCD, Tekton
-- **Databases** - PostgreSQL, Redis, MongoDB
-- **Service Mesh** - Istio, Linkerd
-- **Automation** - GitLab, Harbor, n8n
-
-## Difficulty Levels
-
-- 🟢 **Beginner** - Foundational concepts
-- 🟡 **Medium** - Intermediate topics
-- 🔴 **Hard** - Advanced configurations
-
-## Daily Learning Path
-
-Follow our 65-day journey from zero to hero! See the LinkedIn content sheet for daily topics.
+| Category | Addons |
+|----------|--------|
+| **Storage** | Longhorn, NFS, MinIO |
+| **Networking** | Traefik, MetalLB, Ingress-Nginx |
+| **Observability** | Prometheus, Grafana, Loki, Tempo |
+| **CI/CD** | ArgoCD, GitLab |
+| **Automation** | n8n, Portainer |
+| **Databases** | PostgreSQL, Redis |
 
 ## Requirements
 
-- A Linux machine (VM, bare metal, or Raspberry Pi)
-- 512MB+ RAM
-- Root or sudo access
-- For Ansible: SSH access to target machines
+- **Hardware**: 2+ CPU cores, 2GB+ RAM
+- **OS**: Ubuntu 20.04+, Debian 11+, or RHEL 8+
+- **Access**: Root/sudo privileges
 
-## Learning Resources
+## Daily Learning
 
-- [Setup Guides](./setup/)
-- [Addon Documentation](./ansible/)
-- [Ansible Playbooks](./ansible/)
-- [Sample Manifests](./manifests/)
+Follow our 65-day journey! Each day covers a specific topic with:
+- **Theory** - What and why
+- **Practice** - Hands-on exercises
+- **Challenge** - Test your knowledge
 
-## License
+## Next Steps
 
-MIT
+1. Start with [Setup Guide](./setup/01-installation.md)
+2. Complete the [Challenges](./challenges/)
+3. Deploy [Real Projects](./projects/)
+
+## Links
+
+- [k3s Official Docs](https://docs.k3s.io)
+- [Kubernetes Docs](https://kubernetes.io/docs/)
+- [Ansible Docs](https://docs.ansible.com/)
+
+---
+
+**License**: MIT
