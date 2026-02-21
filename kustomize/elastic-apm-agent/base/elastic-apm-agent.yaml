@@ -1,0 +1,69 @@
+# For more information https://www.elastic.co/guide/en/apm/server/6.8/configuring-howto-apm-server.html
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elastic-apm-agent
+  namespace: elastic-system
+  labels:
+    app.kubernetes.io/name: elastic-apm-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elastic-apm-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: elastic-apm-agent
+    spec:
+      containers:
+        - name: elastic-apm-agent
+          image: docker.elastic.co/apm/apm-server:6.8.11
+          ports:
+            - containerPort: 8200
+              name: apm
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/apm-server/apm-server.yml
+              subPath: apm-server.yml
+            - name: apm-tls
+              mountPath: /etc/apm-server/certs
+              readOnly: true
+          # readinessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: 8200
+          #   initialDelaySeconds: 5
+          #   periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: 200m
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: apm-server-config
+        - name: apm-tls
+          secret:
+            secretName: local-jazziro-com-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elastic-apm-agent
+  namespace: elastic-system
+  labels:
+    app.kubernetes.io/name: elastic-apm-agent
+spec:
+  ports:
+    - name: http
+      port: 8200
+      targetPort: apm
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: elastic-apm-agent
+  type: ClusterIP

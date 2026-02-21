@@ -1,65 +1,44 @@
----
-# Deploy All Addons via Ansible
-- name: Deploy Addons
-  hosts: k3s-master
-  become: yes
-  vars:
-    k3s_context: default
-    argocd_namespace: argocd
-  tasks:
-    - name: Deploy ArgoCD
-      import_playbook: addons/argocd.yaml
+- name: Setup Longhonrn
+  import_playbook: ../addons/longhorn.yaml
 
-    - name: Deploy Longhorn
-      import_playbook: addons/longhorn.yaml
+- name: Setup MetalLB
+  import_playbook: ../addons/metallb.yaml
 
-    - name: Deploy MetalLB
-      import_playbook: addons/metallb.yaml
+- name: Setup Argocd
+  import_playbook: ../addons/argocd.yaml
 
-    - name: Deploy Cert-Manager
-      import_playbook: addons/cert-manager.yaml
+- name: Setup Metrics Server
+  import_playbook: ../addons/metrics-server.yaml
 
-    - name: Deploy Prometheus & Grafana
-      import_playbook: addons/prometheus.yaml
+- name: Setup Cert Manager
+  import_playbook: ../addons/cert-manager.yaml
 
-    - name: Deploy Loki
-      import_playbook: addons/loki.yaml
+- name: adhoc
+  import_playbook: ../addons/adhoc.yaml
+  
+- name: ingress-nginx
+  import_playbook: ../addons/ingress-nginx.yaml
 
-    - name: Deploy KEDA
-      import_playbook: addons/keda.yaml
+- name: cnpg
+  import_playbook: ../addons/cnpg.yaml
 
-    - name: Deploy n8n
-      import_playbook: addons/n8n.yaml
+- name: csi-driver-nfs
+  import_playbook: ../addons/csi-driver-nfs.yaml
 
-    - name: Deploy Portainer
-      import_playbook: addons/portainer.yaml
+- name: media-stack
+  import_playbook: ../addons/media-stack.yaml
 
-    - name: Deploy Gitea
-      import_playbook: addons/gitea.yaml
+- name: homarr
+  import_playbook: ../addons/homarr.yaml
 
-    - name: Deploy Harbor
-      import_playbook: addons/harbor.yaml
+- name: ddns
+  import_playbook: ../addons/ddns.yaml
 
-    - name: Show summary
-      debug:
-        msg: |
-          ========================================
-          All Addons Deployed Successfully!
-          ========================================
-          
-          Access URLs:
-          -----------
-          ArgoCD:       kubectl port-forward -n argocd svc/argocd-server 8080:80
-          Grafana:      kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
-          Prometheus:   kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-stack 9090:9090
-          Loki:        kubectl port-forward -n loki svc/loki 3100:3100
-          Portainer:   kubectl port-forward -n portainer svc/portainer 9000:9000
-          n8n:         kubectl port-forward -n n8n svc/n8n 5678:80
-          Gitea:       kubectl port-forward -n gitea svc/gitea-http 3000:3000
-          Harbor:      kubectl port-forward -n harbor svc/harbor 8080:80
-          
-          Storage:     Longhorn (default)
-          LB:          MetalLB (192.168.1.100-200)
-          
-          Check status:
-            kubectl get pods -A
+- name: beszel-agent
+  import_playbook: ../addons/beszel-agent.yaml
+
+- name: vailtwarden
+  import_playbook: ../addons/vaultwarden.yaml
+
+- name: minio
+  import_playbook: ../addons/minio.yaml

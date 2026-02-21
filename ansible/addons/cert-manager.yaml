@@ -1,76 +1,97 @@
----
-# Deploy Cert-Manager
-- name: Install Cert-Manager
-  hosts: k3s-master
-  become: yes
-  vars:
-    certmanager_version: v1.14.0
+- hosts: k8s-control-plane-1
+  become: no
   tasks:
-    - name: Create cert-manager namespace
-      shell: k3s kubectl create namespace cert-manager || true
-      changed_when: false
 
-    - name: Deploy Cert-Manager CRDs
-      shell: |
-        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ certmanager_version }}/cert-manager.crds.yaml
-      register: certmanager_crd
-      changed_when: "'created' in certmanager_crd.stdout"
+    - name: Deploy Cert Manager
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: cert-manager
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              chart: cert-manager
+              repoURL: https://charts.jetstack.io
+              targetRevision: v1.18.2
+              helm:
+                releaseName: cert-manager
+                values: |
+                  installCRDs: true
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: cert-manager
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
 
-    - name: Deploy Cert-Manager
-      shell: |
-        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ certmanager_version }}/cert-manager.yaml
-      register: certmanager_deploy
-      changed_when: "'created' in certmanager_deploy.stdout"
+    - name: Create cloudflare-api-key secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cloudflare-api-key
+            namespace: cert-manager
+          type: Opaque
+          stringData:
+            apiToken: "{{ cloudflare_api_token }}"
 
-    - name: Wait for Cert-Manager to be ready
-      shell: |
-        sleep 20
-        k3s kubectl get pods -n cert-manager -o jsonpath='{.items[*].status.phase}'
-      register: certmanager_status
-      until: "'Running' in certmanager_status.stdout"
-      retries: 10
-      delay: 10
-      changed_when: false
-
-    - name: Create ClusterIssuer (Let's Encrypt)
-      k8s:
+    - name: Create letsencrypt-staging ClusterIssuer
+      kubernetes.core.k8s:
         state: present
         definition:
           apiVersion: cert-manager.io/v1
           kind: ClusterIssuer
           metadata:
-            name: letsencrypt-prod
+            name: letsencrypt-staging
+          spec:
+            acme:
+              server: https://acme-staging-v02.api.letsencrypt.org/directory
+              email: '{{ letsencrypt_email }}'
+              privateKeySecretRef:
+                name: letsencrypt-staging
+              solvers:
+                - dns01:
+                    cloudflare:
+                      email: '{{ letsencrypt_email }}'
+                      apiTokenSecretRef:
+                        name: cloudflare-api-key
+                        key: apiToken
+                  selector:
+                    dnsZones:
+                      - "{{ domain_name_filter}}"
+
+    - name: Create letsencrypt-production ClusterIssuer
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-production
           spec:
             acme:
               server: https://acme-v02.api.letsencrypt.org/directory
-              email: admin@example.com
+              email: '{{ letsencrypt_email }}'
               privateKeySecretRef:
-                name: letsencrypt-prod
+                name: letsencrypt-staging
               solvers:
-              - http01:
-                  ingress:
-                    class: traefik
-
-    - name: Display info
-      debug:
-        msg: |
-          Cert-Manager installed!
-          
-          Create ClusterIssuer for TLS:
-            kubectl apply -f your-clusterissuer.yaml
-          
-          Example for Let's Encrypt:
-            apiVersion: cert-manager.io/v1
-            kind: ClusterIssuer
-            metadata:
-              name: letsencrypt-prod
-            spec:
-              acme:
-                server: https://acme-v02.api.letsencrypt.org/directory
-                email: your-email@example.com
-                privateKeySecretRef:
-                  name: letsencrypt-prod
-                solvers:
-                - http01:
-                    ingress:
-                      class: traefik
+                - dns01:
+                    cloudflare:
+                      email: '{{ letsencrypt_email }}'
+                      apiTokenSecretRef:
+                        name: cloudflare-api-key
+                        key: apiToken
+                  selector:
+                    dnsZones:
+                      - "{{ domain_name_filter }}"

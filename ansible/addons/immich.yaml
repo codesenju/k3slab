@@ -1,0 +1,286 @@
+---
+- hosts: k8s-control-plane-1
+  gather_facts: no
+  become: no
+  vars:
+    target_namespace: immich
+  tasks:
+
+    - name: Deploy immich postgres
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: immich-postgres
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/codesenju/k3slab.git
+              path: kustomize/immich-postgres/overlays/prod
+              targetRevision: main
+              kustomize:
+                # Add these to your existing kustomize config
+                labels:
+                  app.kubernetes.io/instance: '{{ target_namespace }}'
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: '{{ target_namespace }}'
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+              - RespectIgnoreDifferences=true
+            ignoreDifferences:
+              - group: "postgresql.cnpg.io"
+                kind: Cluster
+                jsonPointers:
+                  - /spec/managed/roles
+
+    - name: Create immich secrets
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: immich-secrets
+            namespace: "{{ target_namespace }}"
+          type: Opaque
+          stringData:
+            DB_HOSTNAME: 'immich-postgres-rw'
+            DB_USERNAME: '{{ immich_db_username }}'
+            DB_PASSWORD: '{{ immich_db_password }}'
+            DB_DATABASE_NAME: '{{ immich_db_name }}'
+            # GOOGLE_CLIENT_ID: '{{ google_client_id }}'
+            # GOOGLE_CLIENT_SECRET: '{{ google_client_secret }}'
+            # MOBILE_REDIRECT_URI: '{{ mobile_redirect_uri }}'
+
+    - name: Create immich postgres secrets
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: immich-postgres-secrets
+            namespace: "{{ target_namespace }}"
+          type: Opaque
+          stringData:
+            username: "{{ immich_db_username }}"
+            password: "{{ immich_db_password }}"
+
+    - name: Create immich pv
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: immich-data
+            labels:
+              service: immich-data # This matches the PVC selector
+          spec:
+            capacity:
+              storage: 250Gi
+            nfs:
+              server: 192.168.0.16 # change me
+              path: /mnt/pool2/immich/
+            accessModes:
+              - ReadWriteOnce
+            mountOptions:
+              - noatime
+              - nfsvers=4.2
+
+    - name: Create immich pvc
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: immich-data-claim
+            namespace: '{{ target_namespace }}'
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 250Gi
+            selector:
+              matchLabels:
+                service: immich-data  # Add selector to match PV label
+            volumeName: immich-data
+            storageClassName: "" # This prevents dynamic provisioning
+
+    - name: Create immich cache pv
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: immich-cache
+            labels:
+              service: immich-cache # This matches the PVC selector
+          spec:
+            capacity:
+              storage: 250Gi
+            nfs:
+              server: 192.168.0.16 # change me
+              path: /mnt/pool2/immich/
+            accessModes:
+              - ReadWriteOnce
+            mountOptions:
+              - noatime
+              - nfsvers=4.2
+
+    - name: Create immich pvc
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: immich-cache-claim
+            namespace: '{{ target_namespace }}'
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 250Gi
+            selector:
+              matchLabels:
+                service: immich-cache  # Add selector to match PV label
+            volumeName: immich-cache
+            storageClassName: "" # This prevents dynamic provisioning
+
+
+    - name: Deploy immich
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: immich
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            sources:
+            - repoURL: ghcr.io/immich-app/immich-charts
+              chart: immich
+              targetRevision: "0.10.3"
+              helm:
+                releaseName: immich
+                valueFiles:
+                - $values/helm/immich_values.yaml
+            - repoURL: 'https://github.com/codesenju/k3slab.git'
+              targetRevision: main
+              ref: values
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ target_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+
+    - name: Create public wildcar certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: jazziro-com-tls
+            namespace: '{{ target_namespace }}'
+          spec:
+            secretName: jazziro-com-tls
+            issuerRef:
+              name: letsencrypt-production
+              kind: ClusterIssuer
+            commonName: "{{ public_dns_wildcard }}"
+            dnsNames:
+            - "{{ public_dns_wildcard }}"
+      tags:
+        - ingress
+        - certificate
+
+    - name: Create local wildcar certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: local-jazziro-com-tls
+            namespace: '{{ target_namespace }}'
+          spec:
+            secretName: local-jazziro-com-tls
+            issuerRef:
+              name: letsencrypt-production
+              kind: ClusterIssuer
+            commonName: "{{ local_dns_wildcard }}"
+            dnsNames:
+            - "{{ local_dns_wildcard }}"
+      tags:
+        - ingress
+        - certificate
+
+    - name: Create immich ingress
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: immich
+            namespace: '{{ target_namespace }}'
+            annotations:
+              external-dns.alpha.kubernetes.io/target: '{{ traefik_service_ip }}'
+              # cert-manager.io/cluster-issuer: letsencrypt-production
+          spec:
+            ingressClassName: traefik
+            tls:
+            - hosts:
+              - "photos.{{ public_dns }}"
+              secretName: jazziro-com-tls
+            - hosts:
+              - "photos.{{ local_dns }}"
+              secretName: local-jazziro-com-tls
+            rules:
+            - host: "photos.{{ local_dns }}"
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: immich-server
+                      port:
+                        number: 2283
+            - host: "photos.{{ public_dns }}"
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: immich-server
+                      port:
+                        number: 2283
+      tags: 
+      - ingress

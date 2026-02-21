@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  namespace: obi
+  name: obi
+spec:
+  selector:
+    matchLabels:
+      instrumentation: obi
+  template:
+    metadata:
+      labels:
+        instrumentation: obi
+    spec:
+      serviceAccount: obi
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: obi
+        resources:
+          limits:
+            memory: 2Gi
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: "otel/ebpf-instrument:main"
+        imagePullPolicy: "Always"
+        env:
+          - name: OBI_KUBE_METADATA_ENABLE
+            value: "autodetect"
+          - name: OTEL_EBPF_CONFIG_PATH
+            value: "/config/obi-config.yml"
+          - name: OTEL_EBPF_KUBE_CLUSTER_NAME
+            value: "kubelab"
+          - name: OTEL_RESOIRCE_ATTRIBUTES
+            value: "deployment.environment=prod,environment=prod"
+        securityContext:
+          privileged: true
+          runAsUser: 0
+          readOnlyRootFilesystem: true
+          capabilities:
+            add:
+              - BPF # <-- Important. Required for most eBPF probes to function correctly.
+              - SYS_PTRACE # <-- Important. Allows OBI to access the container namespaces and inspect executables.
+              - NET_RAW # <-- Important. Allows OBI to use socket filters for http requests.
+              - CHECKPOINT_RESTORE # <-- Important. Allows OBI to open ELF files.
+              - DAC_READ_SEARCH # <-- Important. Allows OBI to open ELF files.
+              - PERFMON # <-- Important. Allows OBI to load BPF programs.
+              - NET_ADMIN # <-- Important. Allows OBI to inject HTTP and TCP context propagation information.
+        volumeMounts:
+          - name: cgroup
+            mountPath: /sys/fs/cgroup
+          - mountPath: /config
+            name: obi-config
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
+      volumes:
+      - name: obi-config
+        configMap:
+          name: obi-config
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup

@@ -1,0 +1,123 @@
+- hosts: k8s-control-plane-1
+  gather_facts: no
+  become: no
+  vars:
+    target_namespace: grafana-system
+  tasks:
+
+    - name: Deploy Grafana Operator
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: grafana-operator
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://grafana.github.io/helm-charts
+              chart: grafana-operator
+              targetRevision: v5.18.0
+              helm:
+                releaseName: grafana-operator
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ target_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+                - ServerSideApply=true
+      tags: grafana-operator
+
+    - name: Create grafana credentials secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana-credentials
+            namespace: "{{ target_namespace }}"
+          type: Opaque
+          stringData:
+            GF_SECURITY_ADMIN_USER: "admin"
+            GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+      tags: grafana-secret
+
+    - name: Deploy Grafana
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: grafana
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/codesenju/k3slab.git
+              path: kustomize/grafana/overlays/prod
+              targetRevision: main
+              kustomize:
+                # Add these to your existing kustomize config
+                labels:
+                  app.kubernetes.io/instance: grafana
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ target_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+              - RespectIgnoreDifferences=true
+            # ignoreDifferences:
+            #   - group: "postgresql.cnpg.io"
+            #     kind: Cluster
+            #     jsonPointers:
+            #       - /spec/managed/roles
+
+    - name: Create kube-prometheus-stack grafana ingress
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: grafana
+            namespace: '{{ target_namespace }}'
+            annotations:
+              # nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+              external-dns.alpha.kubernetes.io/target: '{{ traefik_service_ip }}'
+              cert-manager.io/cluster-issuer: letsencrypt-production
+          spec:
+            ingressClassName: traefik
+            tls:
+              - hosts:
+                  - "grafana.{{ local_dns }}"
+                secretName: local-jazziro-com-tls
+            rules:
+              - host: "grafana.{{ local_dns }}"
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: grafana-service
+                          port:
+                            number: 3000
+      tags:
+        - ingress

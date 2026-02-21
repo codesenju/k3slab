@@ -1,51 +1,36 @@
----
-# Deploy KEDA Event-Driven Autoscaling
-- name: Install KEDA
-  hosts: k3s-master
-  become: yes
-  vars:
-    keda_version: v2.14.0
+- hosts: k8s-control-plane-1
+  become: no
+  gather_facts: no
   tasks:
-    - name: Create keda namespace
-      shell: k3s kubectl create namespace keda || true
-      changed_when: false
 
-    - name: Deploy KEDA
-      shell: |
-        k3s kubectl apply -f https://github.com/kedacore/keda/releases/download/{{ keda_version }}/keda-2.14.0.yaml
-      register: keda_deploy
-      changed_when: "'created' in keda_deploy.stdout or 'configured' in keda_deploy.stdout"
-
-    - name: Wait for KEDA to be ready
-      shell: |
-        sleep 30
-        k3s kubectl get pods -n keda -o jsonpath='{.items[*].status.phase}'
-      register: keda_status
-      until: "'Running' in keda_status.stdout"
-      retries: 10
-      delay: 10
-      changed_when: false
-
-    - name: Display info
-      debug:
-        msg: |
-          KEDA installed!
-          
-          Now you can create ScaledObjects for event-driven scaling!
-          
-          Example:
-            apiVersion: keda.sh/v1alpha1
-            kind: ScaledObject
-            metadata:
-              name: myapp-scaler
-            spec:
-              scaleTargetRef:
-                name: myapp
-              pollingInterval: 15
-              minReplicaCount: 0
-              maxReplicaCount: 100
-              triggers:
-              - type: cpu
-                metricType: Utilization
-                metadata:
-                  value: "70"
+    - name: Deploy keda
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: keda
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              chart: keda
+              repoURL: https://kedacore.github.io/charts
+              targetRevision: 2.17.1
+              helm:
+                releaseName: keda
+                # values: |
+                #   installCRDs: true
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: keda
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+                - ServerSideApply=true

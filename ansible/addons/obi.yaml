@@ -1,0 +1,38 @@
+---
+- hosts: k8s-control-plane-1
+  gather_facts: no
+  become: no
+  vars:
+    target_namespace: obi-system
+  tasks:
+    - name: Deploy OBI
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: obi
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/codesenju/k3slab.git
+              path: kustomize/obi/overlays/prod
+              targetRevision: main
+              kustomize:
+                labels:
+                  app.kubernetes.io/instance: obi
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: '{{ target_namespace }}'
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+              - RespectIgnoreDifferences=true
