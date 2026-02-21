@@ -34,7 +34,7 @@ kubectl create namespace argocd
 kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 # Deploy addons via GitOps
-kubectl apply -f docs/manifests/
+kubectl apply -f addons/manifests/
 ```
 
 ### 3. Verify
@@ -62,7 +62,7 @@ k3slab/
 │   ├── automation/      (GitLab, Harbor, n8n, Portainer)
 │   ├── database/        (PostgreSQL, Redis, MongoDB)
 │   └── servicemesh/    (Istio)
-├── docs/         # Ansible playbooks for deployment
+├── addons/         # Ansible playbooks for deployment
 │   ├── install-k3s.yaml      # Install k3s cluster
 │   ├── addons.yaml          # Deploy all addons
 │   ├── addons/              # Individual addon playbooks
@@ -116,7 +116,7 @@ All addons can be deployed via ArgoCD for automatic sync from Git:
 
 ```bash
 # After installing ArgoCD
-kubectl apply -f docs/manifests/
+kubectl apply -f addons/manifests/
 
 # Check sync status
 argocd app list
@@ -166,7 +166,7 @@ Follow our 65-day journey from zero to hero! See the LinkedIn content sheet for 
 
 - [Setup Guides](./setup/)
 - [Addon Documentation](./addons/)
-- [Ansible Playbooks](./docs/)
+- [Ansible Playbooks](./addons/)
 - [Sample Manifests](./manifests/)
 
 ## License

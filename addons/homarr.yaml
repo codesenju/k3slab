@@ -1,0 +1,205 @@
+- hosts: localhost
+  gather_facts: no
+  become: no
+  vars:
+    namespace: homarr
+  tasks:
+
+    - name: Create Homarr namespace
+      kubernetes.core.k8s:
+        state: present
+        api_version: v1
+        kind: Namespace
+        name: homarr
+
+    - name: Deploy Homarr db pv
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: homarr-db
+            namespace: homarr
+            labels:
+              service: homarr-db  # This matches the PVC selector
+          spec:
+            capacity:
+              storage: 50Mi
+            nfs:
+              server: 192.168.0.16 # change me
+              path: /mnt/pool1/AppData/homarr/db
+            accessModes:
+              - ReadWriteOnce
+            mountOptions:
+              - noatime
+              - nfsvers=4.2
+
+    - name: Deploy Homarr db pvc
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: homarr-db
+            namespace: homarr
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 50Mi
+            selector:
+              matchLabels:
+                service: homarr-db  # Add selector to match PV label
+            volumeName: homarr-db
+            storageClassName: "" # This prevents dynamic provisioning
+
+    - name: Deploy Homarr images pv
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: homarr-images
+            namespace: homarr
+            labels:
+              service: homarr   # This matches the PVC selector
+          spec:
+            capacity:
+              storage: 50Mi
+            nfs:
+              server: 192.168.0.16 # change me
+              path: /mnt/pool1/AppData/homarr/images
+            accessModes:
+              - ReadWriteOnce
+            mountOptions:
+              - noatime
+              - nfsvers=4.2
+      tags:
+        - homarr-images-pv
+
+    - name: Deploy Homarr images pvc
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: homarr-images
+            namespace: homarr
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 50Mi
+            selector:
+              matchLabels:
+                service: homarr-images  # Add selector to match PV label
+            volumeName: homarr-images
+            storageClassName: "" # This prevents dynamic provisioning
+
+    - name: Deploy Homar
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: homarr
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              chart: homarr
+              repoURL: ghcr.io/homarr-labs/charts  # note: the oci:// syntax is not included.
+              targetRevision: 3.7.1
+              helm:
+                releaseName: homarr
+                values: |
+                  rbac: 
+                    enabled: true
+                  service:
+                    # type: LoadBalancer
+                    type: ClusterIP
+                    # loadBalancerIP: {{ homarr_static_ip }}
+                  persistence:
+                    homarrDatabase:
+                      enabled: true
+                      name: "homarr-db"
+                      storageClassName: ""
+                      size: "50Mi"
+                      accessMode: "ReadWriteOnce"
+                      volumeClaimName: "homarr-db"
+                    homarrImages:
+                      enabled: true
+                      name: "homarr-images"
+                      storageClassName: ""
+                      accessMode: "ReadWriteOnce"
+                      size: "50Mi"
+                      mountPath: "/images"
+                      volumeClaimName: "homarr-images"
+                  env:
+                    NODE_TLS_REJECT_UNAUTHORIZED: 0
+                    TZ: Etc/GMT-2
+                    AUTH_SESSION_EXPIRY_TIME: "24h"
+            destination:
+              name: "in-cluster"
+              namespace: homarr
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+
+    - name: Create local wildcar certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: local-jazziro-com
+            namespace: '{{ namespace }}'
+          spec:
+            secretName: local-jazziro-com-tls
+            issuerRef:
+              name: letsencrypt-production
+              kind: ClusterIssuer
+            commonName: "{{ local_dns_wildcard }}"
+            dnsNames:
+            - "{{ local_dns }}"
+            - "{{ local_dns_wildcard }}"
+      tags: homarr-tls
+
+    - name: Create homarr IngressRoute
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: homarr
+            namespace: '{{ namespace }}'
+            annotations:
+              kubernetes.io/ingress.class: traefik
+              external-dns.alpha.kubernetes.io/target: '{{ traefik_service_ip }}'
+          spec:
+            entryPoints:
+              - websecure
+            routes:
+              - match: Host(`homarr.{{ local_dns }}`)
+                kind: Rule
+                services:
+                  - name: homarr
+                    kind: Service
+                    port: 7575
+            tls:
+              secretName: local-jazziro-com-tls
+      tags: homarr-tls

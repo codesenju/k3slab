@@ -1,0 +1,122 @@
+- hosts: localhost
+  gather_facts: no 
+  become: no
+  tasks:
+
+    - name: Deploy gotify
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: gotify
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/codesenju/k3slab.git
+              path: kustomize/gotify/overlays/prod
+              targetRevision: main
+              kustomize:
+                commonAnnotations:
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+                labels:
+                  app.kubernetes.io/instance: gotify-prod
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: gotify
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+              - RespectIgnoreDifferences=true
+      tags: gotify
+
+    - name: Create local wildcar certificate - staging
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: local-jazziro-com-staging
+            namespace: gotify
+          spec:
+            secretName: local-jazziro-com-staging-tls
+            issuerRef:
+              name: letsencrypt-staging
+              kind: ClusterIssuer
+            commonName: "{{ local_dns_wildcard }}"
+            dnsNames:
+            - "{{ local_dns }}"
+            - "{{ local_dns_wildcard }}"
+
+    - name: Create local wildcar certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: local-jazziro-com
+            namespace: gotify
+          spec:
+            secretName: local-jazziro-com-tls
+            issuerRef:
+              name: letsencrypt-production
+              kind: ClusterIssuer
+            commonName: "{{ local_dns_wildcard }}"
+            dnsNames:
+            - "{{ local_dns }}"
+            - "{{ local_dns_wildcard }}"
+
+    - name: Create gotify ingress
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: gotify
+            namespace: gotify
+            annotations:
+              external-dns.alpha.kubernetes.io/target: '{{ traefik_service_ip }}'
+              cert-manager.io/cluster-issuer: letsencrypt-staging
+          spec:
+            ingressClassName: traefik
+            tls:
+            - hosts:
+              - "{{ gotify_domain }}"
+              secretName: local-jazziro-com-tls
+            rules:
+            - host: "{{ gotify_domain }}"
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: gotify
+                      port:
+                        number: 80
+
+    - name: Create gotify secrets
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: gotify-secrets
+            namespace: gotify
+          type: Opaque
+          stringData:
+            GOTIFY_DEFAULTUSER_PASS: "{{ gotify_admin_password}}"
+      tags: gotify
+    

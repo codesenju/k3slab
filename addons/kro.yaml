@@ -1,0 +1,40 @@
+- hosts: localhost
+  gather_facts: no
+  become: no
+  vars:
+    target_namespace: kro
+  tasks:
+
+    - name: Deploy Kro
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: kro
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: registry.k8s.io/kro/charts
+              chart: kro
+              targetRevision: 0.7.0
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ target_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+              - RespectIgnoreDifferences=true
+            # ignoreDifferences:
+            #   - group: "postgresql.cnpg.io"
+            #     kind: Cluster
+            #     jsonPointers:
+            #       - /spec/managed/roles

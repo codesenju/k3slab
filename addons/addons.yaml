@@ -41,4 +41,5 @@
   import_playbook: ../addons/vaultwarden.yaml
 
 - name: minio
-  import_playbook: ../addons/minio.yaml
+  import_playbook: ../addons/minio.yaml- name: n8n
+  import_playbook: ../addons/n8n.yaml
