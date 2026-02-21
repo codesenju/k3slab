@@ -40,37 +40,10 @@ sudo systemctl start nfs-server
 sudo showmount -e localhost
 ```
 
-### On RHEL/CentOS
-
-```bash
-# Install NFS server
-sudo yum install -y nfs-utils
-
-# Create NFS export directory
-sudo mkdir -p /mnt/nfs/k8s
-sudo chmod 777 /mnt/nfs/k8s
-
-# Add to exports
-echo '/mnt/nfs/k8s *(rw,sync,no_subtree_check,no_root_squash)' | sudo tee /etc/exports
-
-# Start services
-sudo systemctl enable nfs-server
-sudo systemctl start nfs-server
-
-# Firewall (if enabled)
-sudo firewall-cmd --permanent --add-service=nfs
-sudo firewall-cmd --reload
+Expected output:
 ```
-
-## Verify NFS is Working
-
-```bash
-# Check NFS exports
-showmount -e localhost
-
-# Or mount locally to test
-sudo mount -t nfs localhost:/mnt/nfs/k8s /mnt/test
-sudo umount /mnt/test
+Export list for localhost:
+/mnt/nfs/k8s *
 ```
 
 ## Install NFS Client on k3s Nodes
@@ -78,75 +51,52 @@ sudo umount /mnt/test
 ```bash
 # Ubuntu/Debian
 sudo apt install -y nfs-common
-
-# RHEL/CentOS
-sudo yum install -y nfs-utils
 ```
 
-## Configure Kubernetes to Use NFS
+## Install NFS Provisioner in Kubernetes
 
-### Option 1: NFS Subdir External Provisioner (Recommended)
+We'll use the NFS Subdir External Provisioner to dynamically provision NFS volumes.
 
-This allows you to use NFS as a dynamic storage provisioner:
+### Option 1: Using Helm (Recommended)
 
 ```bash
-# Install NFS Client Provisioner
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/nfs-subdir-external-provisioner/master/deployyaml/manifests/deployment.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/nfs-subdir-external-provisioner/master/deployyaml/manifests/rbac.yaml
+# Install Helm if not already installed
+curl -fsSL https://get.helm.sh/helm-v3.15.0-linux-amd64.tar.gz | tar -xz -C /tmp/
+sudo mv /tmp/linux-amd64/helm /usr/local/bin/
 
-# Create StorageClass
-kubectl apply -f - <<EOF
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: nfs-client
-provisioner: k8s-sigs.io/nfs-subdir-external-provisioner
-parameters:
-  archiveOnDelete: "false"
-  pathPattern: "\${namespace}-\${pvcName}"
-  onDelete: "delete"
-  server: localhost
-  mountOptions:vers=4
-  share: /mnt/nfs/k8s
-reclaimPolicy: Delete
-volumeBindingMode: Immediate
-EOF
+# Add NFS provisioner helm repo
+helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+helm repo update
+
+# Install NFS provisioner
+helm install nfs-subdir-external-provisioner \
+  nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+  --set nfs.server=localhost \
+  --set nfs.path=/mnt/nfs/k8s
 ```
 
-### Option 2: Static NFS Volumes
+### Option 2: Using kubectl
 
-Create PVCs that use NFS directly:
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/nfs-subdir-external-provisioner/v4.5.0/deploy/objects/deployment.yaml
+```
 
-```yaml
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: nfs-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteMany
-  nfs:
-    server: localhost
-    path: /mnt/nfs/k8s
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nfs-pvc
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 10Gi
+## Verify Installation
+
+```bash
+kubectl get pods -l app=nfs-subdir-external-provisioner
+kubectl get storageclass | grep nfs
+```
+
+Expected output:
+```
+NAME                   PROVISIONER                                     RECLAIMPOLICY   VOLUMEBINDINGMODE
+nfs-client             cluster.local/nfs-subdir-external-provisioner   Delete          Immediate
 ```
 
 ## Use NFS Storage in Pods
 
-### Dynamic Provisioning (Recommended)
+### Create a PVC
 
 ```yaml
 apiVersion: v1
@@ -160,7 +110,16 @@ spec:
   resources:
     requests:
       storage: 1Gi
----
+```
+
+Apply:
+```bash
+kubectl apply -f my-pvc.yaml
+```
+
+### Use in a Pod
+
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -187,19 +146,28 @@ spec:
           claimName: my-data
 ```
 
-## Update Existing Applications
-
-### Longhorn to NFS
-
-If you want to switch from Longhorn to NFS:
+## Test NFS Storage
 
 ```bash
-# Make NFS the default storage class
-kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
-kubectl patch storageclass nfs-client -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+# Create a test PVC
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 1Mi
+EOF
 
-# Or specify explicitly in PVCs
-# Change storageClassName: longhorn to storageClassName: nfs-client
+# Check status
+kubectl get pvc test-nfs
+
+# Should show: Bound
 ```
 
 ## Troubleshooting
@@ -215,9 +183,6 @@ sudo journalctl -u nfs-server -f
 
 # Test mount manually
 sudo mount -t nfs -o vers=4 localhost:/mnt/nfs/k8s /mnt/test
-
-# Check NFS exports
-exportfs -v
 ```
 
 ### Permission Issues
@@ -235,52 +200,22 @@ sudo chmod 777 /mnt/nfs/k8s
 
 ```bash
 # Check provisioner logs
-kubectl logs -n default -l app=nfs-subdir-external-provisioner
+kubectl logs -l app=nfs-subdir-external-provisioner
 
 # Check PVC status
-kubectl get pvc
 kubectl describe pvc <pvc-name>
-
-# Check PV status
-kubectl get pv
-kubectl describe pv <pv-name>
 ```
 
-## Backup and Maintenance
-
-### Backup NFS Data
+## Make NFS the Default Storage Class
 
 ```bash
-# Create backup
-sudo tar czf /backup/nfs-backup-$(date +%Y%m%d).tar.gz /mnt/nfs/k8s
-
-# Restore
-sudo tar xzf /backup/nfs-backup-YYYYMMDD.tar.gz -C /
-```
-
-### Monitoring Disk Space
-
-```bash
-# Check usage
-df -h /mnt/nfs/k8s
-
-# Set up alerts (see monitoring guide)
-```
-
-## Security Considerations
-
-For production, consider:
-
-```bash
-# Limit NFS to localhost only (already done in this guide)
-/mnt/nfs/k8s localhost(rw,sync,no_subtree_check,no_root_squash)
-
-# Or use specific IP ranges
-/mnt/nfs/k8s 192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+# Set NFS as default
+kubectl patch storageclass local-path -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+kubectl patch storageclass nfs-client -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 ```
 
 ## Next Steps
 
-- [Configure NFS for specific applications](./addons/)
-- [Set up backups](./backup.md)
-- [Monitor NFS usage](./monitoring.md)
+- Deploy applications with persistent storage
+- Set up backups for NFS data
+- Explore Longhorn for more advanced storage features
