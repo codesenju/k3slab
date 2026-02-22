@@ -1,10 +1,18 @@
-# k3s Challenges
+# Kubernetes Challenges
 
-Hands-on challenges to test your k3s skills. Complete them in order!
+Test your Kubernetes skills with these hands-on exercises!
+
+## Challenge Levels
+
+- 🟢 **Beginner** - Basic concepts
+- 🟡 **Medium** - Intermediate topics
+- 🔴 **Advanced** - Production scenarios
+
+---
 
 ## Beginner Challenges
 
-### Challenge 1: Deploy Your First App
+### Challenge 1: Deploy Your First App ⭐
 
 **Objective:** Deploy a simple nginx web server
 
@@ -12,17 +20,23 @@ Hands-on challenges to test your k3s skills. Complete them in order!
 1. Create a deployment with 2 replicas
 2. Expose it via ClusterIP service
 3. Verify pods are running
-4. Test internal connectivity
 
 **Solution:**
 ```bash
+# Create deployment
 kubectl create deployment nginx --image=nginx --replicas=2
+
+# Expose service
 kubectl expose deployment nginx --port=80
-kubectl get pods -l app=nginx
-kubectl exec -it nginx-xxxxx -- /bin/bash
+
+# Verify
+kubectl get pods
+kubectl get svc
 ```
 
-### Challenge 2: Scale Your Application
+---
+
+### Challenge 2: Scale Your App ⭐
 
 **Objective:** Practice scaling
 
@@ -30,16 +44,17 @@ kubectl exec -it nginx-xxxxx -- /bin/bash
 1. Scale deployment to 5 replicas
 2. Observe pods being created
 3. Scale down to 3
-4. Check pod distribution
 
 **Solution:**
 ```bash
 kubectl scale deployment nginx --replicas=5
-kubectl get pods -l app=nginx -w
+kubectl get pods -w
 kubectl scale deployment nginx --replicas=3
 ```
 
-### Challenge 3: Update Your App
+---
+
+### Challenge 3: Update Your App ⭐
 
 **Objective:** Perform a rolling update
 
@@ -56,39 +71,50 @@ kubectl rollout history deployment/nginx
 kubectl rollout undo deployment/nginx
 ```
 
-### Challenge 4: Create a ConfigMap
+---
+
+### Challenge 4: Create a ConfigMap ⭐
 
 **Objective:** Manage configuration
 
 **Steps:**
 1. Create a ConfigMap with app config
-2. Mount it as a volume in the pod
-3. Verify the app reads it
+2. Mount it in a pod
 
 **Solution:**
 ```bash
-kubectl create configmap app-config --from-literal=DB_HOST=localhost
+# Create ConfigMap
+kubectl create configmap app-config --from-literal=DB_HOST=localhost --from-literal=LOG_LEVEL=info
+
+# View it
 kubectl get configmap app-config -o yaml
 ```
 
-### Challenge 5: Use Secrets
+---
+
+### Challenge 5: Use Secrets ⭐
 
 **Objective:** Securely store sensitive data
 
 **Steps:**
 1. Create a generic secret
 2. Use it in environment variable
-3. Verify it's available in pod
 
 **Solution:**
 ```bash
-kubectl create secret generic db-creds --from-literal=username=admin --from-literal=password=secret
-kubectl get secret db-creds -o yaml
+kubectl create secret generic db-creds \
+  --from-literal=username=admin \
+  --from-literal=password=secret123
+
+# Use in pod
+kubectl set env deployment/nginx DB_PASSWORD=secret(db-creds.password)
 ```
+
+---
 
 ## Medium Challenges
 
-### Challenge 6: Set Up Monitoring
+### Challenge 6: Set Up Monitoring ⭐⭐
 
 **Objective:** Install Prometheus + Grafana
 
@@ -96,23 +122,27 @@ kubectl get secret db-creds -o yaml
 1. Install kube-prometheus-stack via Helm
 2. Access Grafana dashboard
 3. Explore default metrics
-4. Create a custom dashboard
 
 **Solution:**
 ```bash
 kubectl create namespace monitoring
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring
+
+# Access Grafana
+kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
 ```
 
-### Challenge 7: Configure Ingress
+---
+
+### Challenge 7: Configure Ingress ⭐⭐
 
 **Objective:** Expose app to outside world
 
 **Steps:**
-1. Install ingress controller
-2. Create Ingress resource
-3. Add path-based routing
+1. Create Ingress resource
+2. Add path-based routing
+3. Test from browser
 
 **Solution:**
 ```yaml
@@ -131,29 +161,43 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: nginx-svc
+            name: nginx
             port:
               number: 80
 ```
 
-### Challenge 8: Set Up Persistent Storage
+---
+
+### Challenge 8: Persistent Storage ⭐⭐
 
 **Objective:** Deploy with persistent data
 
 **Steps:**
-1. Create PVC
+1. Create PVC with NFS storage
 2. Deploy with volume mount
 3. Write data
 4. Delete and recreate pod
-5. Verify data persists
 
 **Solution:**
 ```bash
-kubectl apply -f pvc.yaml
-kubectl apply -f deployment-with-pvc.yaml
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-data
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 1Gi
+EOF
 ```
 
-### Challenge 9: Implement Auto-scaling
+---
+
+### Challenge 9: Auto-scaling ⭐⭐
 
 **Objective:** Scale based on CPU
 
@@ -166,9 +210,16 @@ kubectl apply -f deployment-with-pvc.yaml
 ```bash
 kubectl autoscale deployment nginx --min=1 --max=10 --cpu-percent=80
 kubectl get hpa
+
+# Generate load (in another terminal)
+kubectl run -it load-generator --image=busybox -- /bin/sh
+# Then run:
+while true; do wget -q -O- http://nginx; done
 ```
 
-### Challenge 10: Use Network Policies
+---
+
+### Challenge 10: Network Policies ⭐⭐
 
 **Objective:** Secure pod communication
 
@@ -190,9 +241,11 @@ spec:
   - Egress
 ```
 
-## Hard Challenges
+---
 
-### Challenge 11: GitOps with ArgoCD
+## Advanced Challenges
+
+### Challenge 11: GitOps with ArgoCD ⭐⭐⭐
 
 **Objective:** Implement GitOps
 
@@ -200,15 +253,19 @@ spec:
 1. Install ArgoCD
 2. Create application from Git
 3. Sync changes automatically
-4. Rollback via Git
 
 **Solution:**
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Get password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 ```
 
-### Challenge 12: Service Mesh with Istio
+---
+
+### Challenge 12: Service Mesh ⭐⭐⭐
 
 **Objective:** Implement mTLS
 
@@ -216,46 +273,77 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 1. Install Istio
 2. Enable sidecar injection
 3. Configure mTLS
-4. Visualize traffic
 
 **Solution:**
 ```bash
+curl -L https://istio.io/downloadIstio | sh -
 istioctl install --set profile=demo
 kubectl label namespace default istio-injection=enabled
 ```
 
-### Challenge 13: Build a CI/CD Pipeline
+---
 
-**Objective:** Deploy via Tekton
+### Challenge 13: Custom Resources ⭐⭐⭐
 
-**Steps:**
-1. Install Tekton
-2. Create pipeline
-3. Build and deploy
-4. Run tests
-
-### Challenge 14: Multi-Cluster Management
-
-**Objective:** Manage multiple k3s clusters
+**Objective:** Create and use CRDs
 
 **Steps:**
-1. Set up 2 k3s clusters
-2. Install ArgoCD with external cluster
-3. Deploy to both from single Git repo
+1. Create a custom resource definition
+2. Deploy a custom resource
+3. Write a controller (optional)
 
-### Challenge 15: Build a Production Cluster
+**Solution:**
+```yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: backups.example.com
+spec:
+  group: example.com
+  names:
+    kind: Backup
+    plural: backups
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+```
 
-**Objective:** HA k3s setup
+---
+
+### Challenge 15: Production Cluster ⭐⭐⭐
+
+**Objective:** Build a production-ready cluster
 
 **Steps:**
-1. 3 master nodes
+1. Multiple master nodes
 2. External etcd
 3. Load balancer
-4. HAProxy or MetalLB
-5. Worker nodes
+4. Worker nodes
 
-## Submit Your Solutions
+This requires:
+- 3+ VMs
+- External database
+- Proper networking
 
-Share your solutions on LinkedIn and tag the post!
+---
 
-#k3slab #kubernetes #devops #challenge
+## How to Use These Challenges
+
+1. **Start with Beginner** - Complete challenges 1-5
+2. **Move to Medium** - Complete challenges 6-10
+3. **Advance to Hard** - Complete challenges 11-15
+
+## Tips
+
+- Use `kubectl explain` to learn about resources
+- Use `kubectl --dry-run=client -o yaml` to generate manifests
+- Use `kubectl get events --sort-by='.lastTimestamp'` to debug
+- Use `kubectl top pods` to check resource usage
+
+## Next Steps
+
+- [Deploy real projects](../projects/)
+- [Learn about addons](../ansible/)
+- [Build your home lab](../setup/06-nfs-server.md)
